@@ -3,10 +3,11 @@ import requests
 import json
 import time
 import os
+
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 ASSISTANT_ID = "asst_nZVAzYLNhqAIqGTEyrXAqnbb"
-RAILWAY_URL = "https://your-railway-app.up.railway.app/get_company_kpis"
+RAILWAY_URL = "https://market-scout-api-production.up.railway.app/get_company_kpis"
 
 # Step 1: Create a new thread
 thread = openai.beta.threads.create()
@@ -42,6 +43,9 @@ ticker = arguments["ticker"]
 
 # Step 6: Call your Railway API
 response = requests.post(RAILWAY_URL, json={"ticker": ticker})
+if response.status_code != 200:
+    print("KPI API failed:", response.text)
+    exit()
 api_result = response.json()
 
 # Step 7: Submit tool output back to OpenAI
@@ -49,7 +53,7 @@ openai.beta.threads.runs.submit_tool_outputs(
     thread_id=thread.id,
     run_id=run.id,
     tool_outputs=[{
-        "tool_call_id": tool_call["id"],
+        "tool_call_id": tool_call.id,
         "output": json.dumps(api_result)
     }]
 )
@@ -65,5 +69,5 @@ while True:
 messages = openai.beta.threads.messages.list(thread_id=thread.id)
 for msg in reversed(messages.data):
     if msg.role == "assistant":
-        print("\nAssistant Response:\n", msg.content[0]["text"]["value"])
+        print("\nAssistant Response:\n", msg.content[0].text.value)
         break
