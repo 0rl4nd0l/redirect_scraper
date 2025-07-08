@@ -68,6 +68,7 @@ else:
     api_result = {"error": "Invalid function name or missing ticker"}
 
 # Step 7: Submit tool output
+print("\nAPI Result from Finchat:\n", api_result)
 openai.beta.threads.runs.submit_tool_outputs(
     thread_id=thread.id,
     run_id=run.id,
@@ -90,3 +91,6 @@ for msg in reversed(messages.data):
     if msg.role == "assistant":
         print("\nAssistant Response:\n", msg.content[0].text.value)
         break
+
+
+
