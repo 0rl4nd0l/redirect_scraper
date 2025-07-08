@@ -2,3 +2,13 @@ fastapi
 uvicorn
 requests
 pydantic
+httpx
+urllib3
+playwright
+aiofiles
+PyPDF2
+pdfplumber
+python-multipart
+pytesseract
+Pillow
+opencv-python

@@ -206,16 +206,23 @@ class EnhancedWebScraper:
                 'timestamp': datetime.now().isoformat()
             }
 
+def check_tesseract_available():
+    """Check if Tesseract is available"""
+    try:
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
 def main():
     """Main function for testing"""
     # Check if Tesseract is available
-    try:
-        pytesseract.get_tesseract_version()
+    if check_tesseract_available():
         print("✅ Tesseract OCR is available")
-    except Exception as e:
-        print(f"⚠️  Tesseract OCR not found: {e}")
-        print("Image text extraction will be skipped")
-        print("To install: brew install tesseract")
+    else:
+        print("⚠️  Tesseract OCR not found - OCR features will be disabled")
+        print("On Railway: This is expected - OCR requires system dependencies")
+        print("Locally: Install with 'brew install tesseract'")
     
     # Example usage
     scraper = EnhancedWebScraper(delay=2)
