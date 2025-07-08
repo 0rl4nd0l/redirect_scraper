@@ -35,7 +35,7 @@ while True:
     time.sleep(1)
 
 # Step 5: Extract tool call
-tool_call = run_status.required_action["submit_tool_outputs"]["tool_calls"][0]
+tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
 arguments = json.loads(tool_call["function"]["arguments"])
 ticker = arguments["ticker"]
 
