@@ -1,12 +1,14 @@
-from fastapi import FastAPI, HTTPException
 import requests
+from fastapi import FastAPI, HTTPException
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = FastAPI()
 
 @app.get("/scrape")
 def scrape_url(url: str):
     try:
-        resp = requests.get(url, allow_redirects=True, timeout=10)
+        resp = requests.get(url, allow_redirects=True, timeout=10, verify=False)  # Disable SSL verification
         resp.raise_for_status()
         return {
             "final_url": resp.url,
@@ -15,4 +17,3 @@ def scrape_url(url: str):
         }
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=400, detail=str(e))
-
