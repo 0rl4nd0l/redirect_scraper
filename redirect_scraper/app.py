@@ -433,7 +433,7 @@ async def browser_scrape_url(url: str, user_agent: Optional[str] = None, wait_ti
             return stealth_scrape_url(url, user_agent)
             
         async with async_playwright() as p:
-            # Launch browser with realistic settings
+            # Launch browser with minimal configuration for Railway compatibility
             try:
                 browser = await p.chromium.launch(
                     headless=True,
