@@ -188,6 +188,71 @@ class EnhancedWebScraper:
         print(f"  📷 Total unique images found: {len(unique_images)}")
         return unique_images
     
+    def find_meta_images(self, soup, page_url):
+        """Find images from OpenGraph and meta tags"""
+        images = []
+        
+        print(f"  🔍 Searching for meta images...")
+        
+        # OpenGraph image (multiple attribute styles)
+        og_selectors = [
+            ('meta', {'property': 'og:image'}),
+            ('meta', {'property': 'og:image:url'}),
+            ('meta', {'name': 'og:image'})
+        ]
+        
+        for tag, attrs in og_selectors:
+            og_image = soup.find(tag, attrs)
+            if og_image and og_image.get('content'):
+                img_url = urljoin(page_url, og_image['content'])
+                if self.is_image_url(img_url) or self.could_be_image(img_url):
+                    images.append(img_url)
+                    print(f"      ✅ Added OpenGraph image: {img_url}")
+        
+        # Twitter card images
+        twitter_selectors = [
+            ('meta', {'name': 'twitter:image'}),
+            ('meta', {'name': 'twitter:image:src'}),
+            ('meta', {'property': 'twitter:image'})
+        ]
+        
+        for tag, attrs in twitter_selectors:
+            twitter_image = soup.find(tag, attrs)
+            if twitter_image and twitter_image.get('content'):
+                img_url = urljoin(page_url, twitter_image['content'])
+                if self.is_image_url(img_url) or self.could_be_image(img_url):
+                    images.append(img_url)
+                    print(f"      ✅ Added Twitter image: {img_url}")
+        
+        # Generic meta images
+        meta_selectors = [
+            ('meta', {'name': 'image'}),
+            ('meta', {'name': 'thumbnail'}),
+            ('meta', {'property': 'image'})
+        ]
+        
+        for tag, attrs in meta_selectors:
+            meta_images = soup.find_all(tag, attrs)
+            for meta in meta_images:
+                if meta.get('content'):
+                    img_url = urljoin(page_url, meta['content'])
+                    if self.is_image_url(img_url) or self.could_be_image(img_url):
+                        images.append(img_url)
+                        print(f"      ✅ Added meta image: {img_url}")
+        
+        # Look for any meta tag with image-like content
+        all_metas = soup.find_all('meta')
+        for meta in all_metas:
+            content = meta.get('content', '')
+            if content and (self.is_image_url(content) or self.could_be_image(content)):
+                img_url = urljoin(page_url, content)
+                if img_url not in images:  # Avoid duplicates
+                    images.append(img_url)
+                    print(f"      ✅ Added discovered meta image: {img_url}")
+        
+        print(f"  📷 Meta images found: {len(images)}")
+        return images
+    
     def scrape_url(self, url, extract_images=True):
         """Scrape a single URL for text and optionally extract text from images"""
         print(f"\n🔍 Scraping: {url}")
@@ -244,14 +309,21 @@ class EnhancedWebScraper:
             
             # Process images if requested
             if extract_images:
+                # Find images in the HTML
                 images = self.find_images_on_page(soup, str(response.url))
-                result['images_found'] = len(images)
                 
-                if images:
-                    print(f"\n🖼️  Found {len(images)} image(s) to analyze:")
+                # Also check OpenGraph and meta tags for images
+                meta_images = self.find_meta_images(soup, str(response.url))
+                
+                # Combine all images
+                all_images = list(set(images + meta_images))
+                result['images_found'] = len(all_images)
+                
+                if all_images:
+                    print(f"\n🖼️  Found {len(all_images)} image(s) to analyze:")
                     
-                    for i, img_url in enumerate(images[:10], 1):  # Limit to first 10 images
-                        print(f"\n  Image {i}/{min(len(images), 10)}:")
+                    for i, img_url in enumerate(all_images[:10], 1):  # Limit to first 10 images
+                        print(f"\n  Image {i}/{min(len(all_images), 10)}:")
                         
                         # Extract text from image
                         ocr_text = self.extract_text_from_image(img_url, str(response.url))
