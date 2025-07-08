@@ -1,11 +1,16 @@
 [phases.setup]
-nixPkgs = ['python39', 'tesseract']
+nixPkgs = ['python39', 'tesseract4']
 
 [phases.install]
-cmds = ['pip install -r requirements.txt']
+cmds = [
+  'pip install -r requirements.txt'
+]
 
 [phases.build]
-cmds = ['echo "Build phase complete"']
+cmds = [
+  'echo "Checking Tesseract installation..."',
+  'tesseract --version || echo "Tesseract not found"'
+]
 
 [start]
 cmd = 'python bridge_runner.py'

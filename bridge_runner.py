@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from openai import OpenAI
+from web_scraper import EnhancedWebScraper, check_tesseract_available
 
 # Setup OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -32,6 +33,22 @@ tools = [
         }
     }
 ]
+
+# Test OCR functionality
+print("🔍 Testing OCR capabilities...")
+if check_tesseract_available():
+    print("✅ Tesseract OCR is available on Railway!")
+    
+    # Test with a simple web scraping example
+    scraper = EnhancedWebScraper(delay=1)
+    test_result = scraper.scrape_url("https://httpbin.org/html", extract_images=False)
+    print(f"📄 Test scrape result: {test_result.get('title', 'No title')}")
+else:
+    print("❌ Tesseract OCR not available")
+
+print("\n" + "="*50)
+print("Starting OpenAI integration...")
+print("="*50)
 
 response = client.chat.completions.create(
     model="gpt-4o",
