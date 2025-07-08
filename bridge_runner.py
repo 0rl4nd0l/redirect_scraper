@@ -1,14 +1,16 @@
-import openai
-import requests
-import json
-import time
 import os
+import time
+import json
+import requests
+import openai
 
+# Set your OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-ASSISTANT_ID = "asst_nZVAzYLNhqAIqGTEyrXAqnbb"
+# Base URL for your custom API
 BASE_URL = "https://market-scout-api-production.up.railway.app"
 
+# Mapping of function names to API endpoints
 ENDPOINTS = {
     "get_company_kpis": "/get_company_kpis",
     "get_company_profile": "/get_company_profile",
@@ -22,75 +24,72 @@ ENDPOINTS = {
     "get_company_news": "/get_company_news"
 }
 
-# Step 1: Create a new thread
-thread = openai.beta.threads.create()
-
-# Step 2: Send a message to the thread
-message = openai.beta.threads.messages.create(
-    thread_id=thread.id,
-    role="user",
-    content="Get KPIs for AAPL"
-)
-
-# Step 3: Run the assistant
-run = openai.beta.threads.runs.create(
-    thread_id=thread.id,
-    assistant_id=ASSISTANT_ID
-)
-
-# Step 4: Wait for tool call
-while True:
-    run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-    if run_status.status == "requires_action":
-        break
-    elif run_status.status in ["completed", "failed", "cancelled"]:
-        print(f"Run ended unexpectedly with status: {run_status.status}")
-        exit()
-    time.sleep(1)
-
-# Step 5: Extract tool call
-tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
-function_name = tool_call.function.name
-arguments = json.loads(tool_call.function.arguments)
-ticker = arguments.get("ticker")
-
-# Step 6: Call appropriate endpoint
-if function_name in ENDPOINTS and ticker:
-    try:
-        response = requests.post(BASE_URL + ENDPOINTS[function_name], json={"ticker": ticker})
-        api_result = response.json() if response.ok else {
-            "error": f"Status {response.status_code}",
-            "details": response.text
+# Define the tools (functions) available to the model
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_company_kpis",
+            "description": "Get key performance indicators for a company by ticker",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {
+                        "type": "string",
+                        "description": "The stock ticker symbol (e.g., AAPL)"
+                    }
+                },
+                "required": ["ticker"]
+            }
         }
-    except Exception as e:
-        api_result = {"error": str(e)}
-else:
-    api_result = {"error": "Invalid function name or missing ticker"}
+    },
+    # Add other function definitions here as needed
+]
 
-# Step 7: Submit tool output
-print("\nAPI Result from Finchat:\n", api_result)
-openai.beta.threads.runs.submit_tool_outputs(
-    thread_id=thread.id,
-    run_id=run.id,
-    tool_outputs=[{
-        "tool_call_id": tool_call.id,
-        "output": json.dumps(api_result)
-    }]
+# Step 1: Create the initial response
+response = openai.responses.create(
+    model="gpt-4o",
+    input="Get KPIs for AAPL",
+    tools=tools
 )
 
-# Step 8: Wait for final response
-while True:
-    run_status = openai.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-    if run_status.status == "completed":
-        break
-    time.sleep(1)
+# Step 2: Check if the model requires action (i.e., needs to call a tool)
+if response.status == "requires_action":
+    tool_call = response.required_action.submit_tool_outputs.tool_calls[0]
+    function_name = tool_call.function.name
+    arguments = json.loads(tool_call.function.arguments)
+    ticker = arguments.get("ticker")
 
-# Step 9: Print assistant's final message
-messages = openai.beta.threads.messages.list(thread_id=thread.id)
-for msg in reversed(messages.data):
-    if msg.role == "assistant":
-        print("\nAssistant Response:\n", msg.content[0].text.value)
-        break
+    # Step 3: Call the appropriate endpoint
+    if function_name in ENDPOINTS and ticker:
+        try:
+            api_response = requests.post(
+                BASE_URL + ENDPOINTS[function_name],
+                json={"ticker": ticker}
+            )
+            api_result = api_response.json() if api_response.ok else {
+                "error": f"Status {api_response.status_code}",
+                "details": api_response.text
+            }
+        except Exception as e:
+            api_result = {"error": str(e)}
+    else:
+        api_result = {"error": "Invalid function name or missing ticker"}
 
+    # Step 4: Submit the tool output back to the model
+    follow_up = openai.responses.create(
+        model="gpt-4o",
+        previous_response_id=response.id,
+        tool_outputs=[
+            {
+                "tool_call_id": tool_call.id,
+                "output": json.dumps(api_result)
+            }
+        ]
+    )
 
-
+    # Step 5: Print the assistant's final response
+    print("\nAssistant Response:\n", follow_up.output[0].content[0].text)
+else:
+    # If no action is required, print the initial response
+    print("\nAssistant Response:\n", response.output[0].content[0].text)
