@@ -26,8 +26,29 @@ class EnhancedWebScraper:
         
     def is_image_url(self, url):
         """Check if URL points to an image file"""
-        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp']
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg']
         return any(url.lower().endswith(ext) for ext in image_extensions)
+    
+    def could_be_image(self, url):
+        """Check if URL could be an image (more permissive check)"""
+        # Some images might not have extensions or have query parameters
+        url_lower = url.lower()
+        
+        # Skip obvious non-images
+        skip_patterns = ['javascript:', 'data:text', '.css', '.js', '.html', '.php']
+        if any(pattern in url_lower for pattern in skip_patterns):
+            return False
+        
+        # Include data URIs that start with image
+        if url_lower.startswith('data:image/'):
+            return True
+            
+        # Include URLs that might be images but don't have clear extensions
+        image_indicators = ['image', 'img', 'photo', 'picture', 'thumbnail', 'avatar']
+        if any(indicator in url_lower for indicator in image_indicators):
+            return True
+            
+        return False
         
     def resolve_redirect(self, url):
         """Resolve redirect to find the clean URL"""
@@ -103,17 +124,52 @@ class EnhancedWebScraper:
         images = []
         base_domain = urlparse(page_url).netloc
         
-        for img_tag in soup.find_all('img', src=True):
-            src = img_tag.get('src')
-            if src:
-                # Convert relative URLs to absolute
-                full_url = urljoin(page_url, src)
-                
-                # Only include images from the same domain or allow external if needed
-                if self.is_image_url(full_url):
-                    images.append(full_url)
+        # Look for img tags with src
+        img_tags = soup.find_all('img')
+        print(f"  🔍 Found {len(img_tags)} <img> tags total")
         
-        return list(set(images))  # Remove duplicates
+        for i, img_tag in enumerate(img_tags, 1):
+            src = img_tag.get('src')
+            data_src = img_tag.get('data-src')  # Lazy loading
+            srcset = img_tag.get('srcset')  # Responsive images
+            
+            print(f"    Image {i}: src='{src}', data-src='{data_src}', srcset='{srcset}'")
+            
+            # Try different src attributes
+            potential_srcs = [src, data_src]
+            
+            # Parse srcset if available
+            if srcset:
+                srcset_urls = [url.strip().split()[0] for url in srcset.split(',')]
+                potential_srcs.extend(srcset_urls)
+            
+            for potential_src in potential_srcs:
+                if potential_src:
+                    # Convert relative URLs to absolute
+                    full_url = urljoin(page_url, potential_src)
+                    
+                    # Check if it's a valid image URL (more permissive)
+                    if self.is_image_url(full_url) or self.could_be_image(full_url):
+                        images.append(full_url)
+                        print(f"      ✅ Added: {full_url}")
+                    else:
+                        print(f"      ❌ Skipped (not image): {full_url}")
+        
+        # Also look for CSS background images
+        for element in soup.find_all(style=True):
+            style = element.get('style', '')
+            if 'background-image' in style:
+                import re
+                matches = re.findall(r'background-image:\s*url\(["\']?([^"\')]+)["\']?\)', style)
+                for match in matches:
+                    full_url = urljoin(page_url, match)
+                    if self.is_image_url(full_url) or self.could_be_image(full_url):
+                        images.append(full_url)
+                        print(f"      ✅ Added CSS background: {full_url}")
+        
+        unique_images = list(set(images))  # Remove duplicates
+        print(f"  📷 Total unique images found: {len(unique_images)}")
+        return unique_images
     
     def scrape_url(self, url, extract_images=True):
         """Scrape a single URL for text and optionally extract text from images"""
@@ -125,14 +181,15 @@ class EnhancedWebScraper:
             print(f"🔗 Resolved Clean URL: {clean_url}")
 
             # Get page content with better headers
-            
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Accept-Encoding': 'gzip, deflate',
                 'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': clean_url,
+                'Cache-Control': 'no-cache'
             }
             
             response = self.session.get(clean_url, headers=headers, allow_redirects=True, timeout=15)
