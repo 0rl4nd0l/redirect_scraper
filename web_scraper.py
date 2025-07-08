@@ -20,8 +20,19 @@ class EnhancedWebScraper:
     def __init__(self, delay=2):
         self.delay = delay
         self.session = requests.Session()
+        
+        # More comprehensive browser headers
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1'
         })
         
     def is_image_url(self, url):
@@ -66,6 +77,77 @@ class EnhancedWebScraper:
             return True
             
         return False
+    
+    def try_multiple_strategies(self, url):
+        """Try multiple strategies to access blocked content"""
+        strategies = [
+            {
+                'name': 'Standard Browser',
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'cross-site',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0'
+                }
+            },
+            {
+                'name': 'Mobile Safari',
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate'
+                }
+            },
+            {
+                'name': 'Firefox',
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1'
+                }
+            }
+        ]
+        
+        best_response = None
+        best_length = 0
+        
+        for strategy in strategies:
+            try:
+                print(f"  🔄 Trying {strategy['name']}...")
+                response = self.session.get(url, headers=strategy['headers'], timeout=15, allow_redirects=True)
+                
+                # Check if this response is better (longer content, not an error page)
+                is_error_page = (
+                    response.status_code == 403 or
+                    'cloudfront' in response.text.lower() or
+                    'request could not be satisfied' in response.text.lower() or
+                    'access denied' in response.text.lower()
+                )
+                
+                if not is_error_page and len(response.text) > best_length:
+                    best_response = response
+                    best_length = len(response.text)
+                    print(f"    ✅ {strategy['name']} worked! Got {len(response.text)} chars")
+                else:
+                    print(f"    ❌ {strategy['name']} blocked or minimal content")
+                    
+                time.sleep(1)  # Be respectful between attempts
+                
+            except Exception as e:
+                print(f"    ❌ {strategy['name']} failed: {e}")
+                
+        return best_response
         
     def resolve_redirect(self, url):
         """Resolve redirect to find the clean URL"""
@@ -284,23 +366,25 @@ class EnhancedWebScraper:
             print(f"🔗 Final URL: {response.url}")
             
             # Check for CloudFront blocking or error pages
-            if (response.status_code == 403 or 
+            is_blocked = (
+                response.status_code == 403 or 
                 'cloudfront' in response.text.lower() or 
                 'request could not be satisfied' in response.text.lower() or
-                len(response.text) < 1000):
+                'access denied' in response.text.lower() or
+                len(response.text) < 500  # Threshold for minimal content
+            )
+            
+            if is_blocked:
+                print(f"⚠️  Detected blocking/error page ({len(response.text)} chars). Trying multiple strategies...")
                 
-                print(f"⚠️  Detected potential blocking/error page. Trying alternative approach...")
+                # Try multiple strategies to bypass blocking
+                alt_response = self.try_multiple_strategies(clean_url)
                 
-                # Try with different user agent
-                alt_headers = headers.copy()
-                alt_headers['User-Agent'] = 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1'
-                
-                alt_response = self.session.get(clean_url, headers=alt_headers, allow_redirects=True, timeout=15)
-                if alt_response.status_code == 200 and len(alt_response.text) > len(response.text):
-                    print(f"✅ Alternative approach worked! Using mobile user agent.")
+                if alt_response and len(alt_response.text) > len(response.text):
+                    print(f"✅ Multi-strategy approach successful! Using best response.")
                     response = alt_response
                 else:
-                    print(f"🔴 Still blocked. Proceeding with limited content.")
+                    print(f"🔴 All strategies blocked. Content may be JavaScript-rendered or require authentication.")
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
