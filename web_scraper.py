@@ -262,23 +262,45 @@ class EnhancedWebScraper:
             clean_url = self.resolve_redirect(url)
             print(f"🔗 Resolved Clean URL: {clean_url}")
 
-            # Get page content with better headers
+            # Get page content with enhanced headers to bypass CloudFront blocking
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
-                'Referer': clean_url,
-                'Cache-Control': 'no-cache'
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                'DNT': '1'
             }
             
             response = self.session.get(clean_url, headers=headers, allow_redirects=True, timeout=15)
-            response.raise_for_status()
             
             print(f"✅ Status code: {response.status_code}")
             print(f"🔗 Final URL: {response.url}")
+            
+            # Check for CloudFront blocking or error pages
+            if (response.status_code == 403 or 
+                'cloudfront' in response.text.lower() or 
+                'request could not be satisfied' in response.text.lower() or
+                len(response.text) < 1000):
+                
+                print(f"⚠️  Detected potential blocking/error page. Trying alternative approach...")
+                
+                # Try with different user agent
+                alt_headers = headers.copy()
+                alt_headers['User-Agent'] = 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1'
+                
+                alt_response = self.session.get(clean_url, headers=alt_headers, allow_redirects=True, timeout=15)
+                if alt_response.status_code == 200 and len(alt_response.text) > len(response.text):
+                    print(f"✅ Alternative approach worked! Using mobile user agent.")
+                    response = alt_response
+                else:
+                    print(f"🔴 Still blocked. Proceeding with limited content.")
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
