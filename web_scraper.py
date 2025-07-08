@@ -390,7 +390,7 @@ class EnhancedWebScraper:
         print(f"  📷 Meta images found: {len(images)}")
         return images
     
-async def scrape_url(self, url, extract_images=True, force_playwright=False):
+    async def scrape_url(self, url, extract_images=True, force_playwright=False):
         """Scrape a single URL for text and optionally extract text from images"""
         print(f"\n🔍 Scraping: {url}")
         print("-" * 80)
@@ -515,67 +515,6 @@ async def scrape_url(self, url, extract_images=True, force_playwright=False):
                         
                         # Extract text from image
                         ocr_text = self.extract_text_from_image(img_url, final_url)
-                        
-                        if ocr_text:
-                            print(f"  ✅ OCR Text: {ocr_text}")
-                            result['image_texts'].append({
-                                'image_url': img_url,
-                                'text': ocr_text
-                            })
-                        else:
-                            print(f"  ⚪ No readable text found")
-                        
-                        # Be respectful to the server
-                        time.sleep(1)
-                else:
-                    print("\n🖼️  No images found on this page")
-            
-            return result
-            
-        except Exception as e:
-            print(f"❌ Error scraping {url}: {e}")
-            return {
-                'url': url,
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            page_text = soup.get_text(separator=' ')
-            clean_text = re.sub(r'\s+', ' ', page_text).strip()
-            
-            print(f"\n📝 Page Text ({len(clean_text)} chars):")
-            print(clean_text[:1000] + "..." if len(clean_text) > 1000 else clean_text)
-            
-            result = {
-                'url': str(response.url),
-                'status_code': response.status_code,
-                'title': title_text,
-                'page_text': clean_text,
-                'timestamp': datetime.now().isoformat(),
-                'images_found': 0,
-                'image_texts': []
-            }
-            
-            # Process images if requested
-            if extract_images:
-                # Find images in the HTML
-                images = self.find_images_on_page(soup, str(response.url))
-                
-                # Also check OpenGraph and meta tags for images
-                meta_images = self.find_meta_images(soup, str(response.url))
-                
-                # Combine all images
-                all_images = list(set(images + meta_images))
-                result['images_found'] = len(all_images)
-                
-                if all_images:
-                    print(f"\n🖼️  Found {len(all_images)} image(s) to analyze:")
-                    
-                    for i, img_url in enumerate(all_images[:10], 1):  # Limit to first 10 images
-                        print(f"\n  Image {i}/{min(len(all_images), 10)}:")
-                        
-                        # Extract text from image
-                        ocr_text = self.extract_text_from_image(img_url, str(response.url))
                         
                         if ocr_text:
                             print(f"  ✅ OCR Text: {ocr_text}")
