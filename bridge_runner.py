@@ -7,10 +7,10 @@ import openai
 # Set your OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Base URL for your custom API
+# Base URL for your custom backend API
 BASE_URL = "https://market-scout-api-production.up.railway.app"
 
-# Mapping of function names to API endpoints
+# Mapping of function names to backend API endpoints
 ENDPOINTS = {
     "get_company_kpis": "/get_company_kpis",
     "get_company_profile": "/get_company_profile",
@@ -24,7 +24,7 @@ ENDPOINTS = {
     "get_company_news": "/get_company_news"
 }
 
-# Define the tools (functions) available to the model
+# Define tools (functions) that the assistant can call
 tools = [
     {
         "type": "function",
@@ -42,25 +42,25 @@ tools = [
                 "required": ["ticker"]
             }
         }
-    },
-    # Add other function definitions here as needed
+    }
+    # Add other functions in the same format if needed
 ]
 
-# Step 1: Create the initial response
+# Step 1: Create the initial assistant response
 response = openai.responses.create(
     model="gpt-4o",
     input="Get KPIs for AAPL",
     tools=tools
 )
 
-# Step 2: Check if the model requires action (i.e., needs to call a tool)
+# Step 2: If the assistant wants to call a tool
 if response.status == "requires_action":
     tool_call = response.required_action.submit_tool_outputs.tool_calls[0]
     function_name = tool_call.function.name
     arguments = json.loads(tool_call.function.arguments)
     ticker = arguments.get("ticker")
 
-    # Step 3: Call the appropriate endpoint
+    # Step 3: Call the external API
     if function_name in ENDPOINTS and ticker:
         try:
             api_response = requests.post(
@@ -76,7 +76,9 @@ if response.status == "requires_action":
     else:
         api_result = {"error": "Invalid function name or missing ticker"}
 
-    # Step 4: Submit the tool output back to the model
+    print("\nAPI Result from Finchat:\n", api_result)
+
+    # Step 4: Submit the tool output back to the assistant
     follow_up = openai.responses.create(
         model="gpt-4o",
         previous_response_id=response.id,
@@ -88,8 +90,8 @@ if response.status == "requires_action":
         ]
     )
 
-    # Step 5: Print the assistant's final response
+    # Step 5: Print the assistant's response
     print("\nAssistant Response:\n", follow_up.output[0].content[0].text)
 else:
-    # If no action is required, print the initial response
+    # Assistant answered without a tool call
     print("\nAssistant Response:\n", response.output[0].content[0].text)
