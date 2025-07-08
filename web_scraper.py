@@ -15,10 +15,13 @@ import time
 import json
 from datetime import datetime
 import base64
+import asyncio
+from playwright.async_api import async_playwright
 
 class EnhancedWebScraper:
-    def __init__(self, delay=2):
+    def __init__(self, delay=2, use_playwright=False):
         self.delay = delay
+        self.use_playwright = use_playwright
         self.session = requests.Session()
         
         # More comprehensive browser headers
@@ -35,6 +38,58 @@ class EnhancedWebScraper:
             'Sec-Fetch-User': '?1'
         })
         
+    async def fetch_with_playwright(self, url):
+        """Fetch page content using a headless browser with Playwright."""
+        print(f"  🤖 Using Playwright to fetch JavaScript-rendered content...")
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--disable-gpu'
+                    ]
+                )
+                context = await browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    viewport={'width': 1920, 'height': 1080},
+                    locale='en-US'
+                )
+                page = await context.new_page()
+                
+                # Set additional realistic properties to avoid bot detection
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined,
+                    });
+                """)
+                
+                # Navigate and wait for content to load
+                await page.goto(url, wait_until='networkidle', timeout=30000)
+                
+                # Wait a bit more for any late-loading content
+                await asyncio.sleep(3)
+                
+                # Get the final URL after any redirects
+                final_url = page.url
+                
+                # Get the rendered HTML content
+                content = await page.content()
+                
+                await browser.close()
+                
+                print(f"  ✅ Playwright fetch successful! Content length: {len(content)} chars")
+                return content, final_url
+                
+        except Exception as e:
+            print(f"  ❌ Playwright fetch failed: {e}")
+            return None, None
+
     def is_image_url(self, url):
         """Check if URL points to an image file"""
         image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg']
@@ -335,7 +390,7 @@ class EnhancedWebScraper:
         print(f"  📷 Meta images found: {len(images)}")
         return images
     
-    def scrape_url(self, url, extract_images=True):
+async def scrape_url(self, url, extract_images=True, force_playwright=False):
         """Scrape a single URL for text and optionally extract text from images"""
         print(f"\n🔍 Scraping: {url}")
         print("-" * 80)
@@ -344,49 +399,75 @@ class EnhancedWebScraper:
             clean_url = self.resolve_redirect(url)
             print(f"🔗 Resolved Clean URL: {clean_url}")
 
-            # Get page content with enhanced headers to bypass CloudFront blocking
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Cache-Control': 'max-age=0',
-                'DNT': '1'
-            }
-            
-            response = self.session.get(clean_url, headers=headers, allow_redirects=True, timeout=15)
-            
-            print(f"✅ Status code: {response.status_code}")
-            print(f"🔗 Final URL: {response.url}")
-            
-            # Check for CloudFront blocking or error pages
-            is_blocked = (
-                response.status_code == 403 or 
-                'cloudfront' in response.text.lower() or 
-                'request could not be satisfied' in response.text.lower() or
-                'access denied' in response.text.lower() or
-                len(response.text) < 500  # Threshold for minimal content
+            # Determine if we should use Playwright
+            should_use_playwright = (
+                self.use_playwright or 
+                force_playwright or 
+                'listcorp.com' in clean_url.lower()  # Known JavaScript-heavy site
             )
             
-            if is_blocked:
-                print(f"⚠️  Detected blocking/error page ({len(response.text)} chars). Trying multiple strategies...")
+            if should_use_playwright:
+                # Use Playwright for JavaScript-heavy sites
+                content, final_url = await self.fetch_with_playwright(clean_url)
                 
-                # Try multiple strategies to bypass blocking
-                alt_response = self.try_multiple_strategies(clean_url)
-                
-                if alt_response and len(alt_response.text) > len(response.text):
-                    print(f"✅ Multi-strategy approach successful! Using best response.")
-                    response = alt_response
+                if content:
+                    soup = BeautifulSoup(content, 'html.parser')
+                    status_code = 200  # Playwright successful
+                    final_url = final_url or clean_url
+                    print(f"✅ Status code: {status_code} (Playwright)")
+                    print(f"🔗 Final URL: {final_url}")
                 else:
-                    print(f"🔴 All strategies blocked. Content may be JavaScript-rendered or require authentication.")
+                    # Fallback to traditional scraping if Playwright fails
+                    print("🔄 Playwright failed, falling back to traditional scraping...")
+                    should_use_playwright = False
             
-            soup = BeautifulSoup(response.text, 'html.parser')
+            if not should_use_playwright or not content:
+                # Traditional scraping approach
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0',
+                    'DNT': '1'
+                }
+                
+                response = self.session.get(clean_url, headers=headers, allow_redirects=True, timeout=15)
+                
+                status_code = response.status_code
+                final_url = str(response.url)
+                print(f"✅ Status code: {status_code}")
+                print(f"🔗 Final URL: {final_url}")
+                
+                # Check for CloudFront blocking or error pages
+                is_blocked = (
+                    response.status_code == 403 or 
+                    'cloudfront' in response.text.lower() or 
+                    'request could not be satisfied' in response.text.lower() or
+                    'access denied' in response.text.lower() or
+                    len(response.text) < 500  # Threshold for minimal content
+                )
+                
+                if is_blocked:
+                    print(f"⚠️  Detected blocking/error page ({len(response.text)} chars). Trying multiple strategies...")
+                    
+                    # Try multiple strategies to bypass blocking
+                    alt_response = self.try_multiple_strategies(clean_url)
+                    
+                    if alt_response and len(alt_response.text) > len(response.text):
+                        print(f"✅ Multi-strategy approach successful! Using best response.")
+                        response = alt_response
+                    else:
+                        print(f"🔴 All strategies blocked. Content may be JavaScript-rendered.")
+                        print(f"💡 Consider setting force_playwright=True or use_playwright=True")
+                
+                soup = BeautifulSoup(response.text, 'html.parser')
             
             # Extract page title
             title = soup.find('title')
@@ -396,6 +477,68 @@ class EnhancedWebScraper:
             # Extract visible page text
             for script in soup(['script', 'style', 'meta', 'link']):
                 script.decompose()
+            
+            page_text = soup.get_text(separator=' ')
+            clean_text = re.sub(r'\s+', ' ', page_text).strip()
+            
+            print(f"\n📝 Page Text ({len(clean_text)} chars):")
+            print(clean_text[:1000] + "..." if len(clean_text) > 1000 else clean_text)
+            
+            result = {
+                'url': final_url,
+                'status_code': status_code,
+                'title': title_text,
+                'page_text': clean_text,
+                'timestamp': datetime.now().isoformat(),
+                'images_found': 0,
+                'image_texts': [],
+                'method': 'playwright' if should_use_playwright and content else 'traditional'
+            }
+            
+            # Process images if requested
+            if extract_images:
+                # Find images in the HTML
+                images = self.find_images_on_page(soup, final_url)
+                
+                # Also check OpenGraph and meta tags for images
+                meta_images = self.find_meta_images(soup, final_url)
+                
+                # Combine all images
+                all_images = list(set(images + meta_images))
+                result['images_found'] = len(all_images)
+                
+                if all_images:
+                    print(f"\n🖼️  Found {len(all_images)} image(s) to analyze:")
+                    
+                    for i, img_url in enumerate(all_images[:10], 1):  # Limit to first 10 images
+                        print(f"\n  Image {i}/{min(len(all_images), 10)}:")
+                        
+                        # Extract text from image
+                        ocr_text = self.extract_text_from_image(img_url, final_url)
+                        
+                        if ocr_text:
+                            print(f"  ✅ OCR Text: {ocr_text}")
+                            result['image_texts'].append({
+                                'image_url': img_url,
+                                'text': ocr_text
+                            })
+                        else:
+                            print(f"  ⚪ No readable text found")
+                        
+                        # Be respectful to the server
+                        time.sleep(1)
+                else:
+                    print("\n🖼️  No images found on this page")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Error scraping {url}: {e}")
+            return {
+                'url': url,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
             
             page_text = soup.get_text(separator=' ')
             clean_text = re.sub(r'\s+', ' ', page_text).strip()
