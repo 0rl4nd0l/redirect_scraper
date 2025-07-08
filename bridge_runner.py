@@ -2,8 +2,8 @@ import openai
 import requests
 import json
 import time
-
-openai.api_key = "your-openai-api-key"
+import os
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 ASSISTANT_ID = "your-assistant-id"
 RAILWAY_URL = "https://your-railway-app.up.railway.app/get_company_kpis"
