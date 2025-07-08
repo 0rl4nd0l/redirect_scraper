@@ -5,7 +5,7 @@ import time
 import os
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-ASSISTANT_ID = "your-assistant-id"
+ASSISTANT_ID = "asst_nZVAzYLNhqAIqGTEyrXAqnbb"
 RAILWAY_URL = "https://your-railway-app.up.railway.app/get_company_kpis"
 
 # Step 1: Create a new thread
