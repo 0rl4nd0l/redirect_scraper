@@ -1,19 +1,17 @@
+from fastapi import FastAPI, HTTPException, Query
 import requests
-from fastapi import FastAPI, HTTPException
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = FastAPI()
 
 @app.get("/scrape")
-def scrape_url(url: str):
+def scrape_url(url: str = Query(..., description="URL to scrape")):
     try:
-        resp = requests.get(url, allow_redirects=True, timeout=10, verify=False)  # Disable SSL verification
-        resp.raise_for_status()
+        response = requests.get(url, allow_redirects=True, timeout=15, verify=False)
+        response.raise_for_status()
         return {
-            "final_url": resp.url,
-            "status_code": resp.status_code,
-            "content_snippet": resp.text[:500]  # first 500 chars for preview
+            "final_url": response.url,
+            "status_code": response.status_code,
+            "content_snippet": response.text[:500]  # first 500 chars as preview
         }
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=400, detail=str(e))
