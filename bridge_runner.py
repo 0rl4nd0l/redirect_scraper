@@ -36,7 +36,8 @@ while True:
 
 # Step 5: Extract tool call
 tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
-arguments = json.loads(tool_call["function"]["arguments"])
+arguments = json.loads(tool_call.function.arguments)
+
 ticker = arguments["ticker"]
 
 # Step 6: Call your Railway API
