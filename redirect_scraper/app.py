@@ -1,26 +1,19 @@
-import requests
-from fastapi import FastAPI, HTTPException
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import logging
 
-app = FastAPI()
+logging.basicConfig(level=logging.INFO)
 
 @app.get("/scrape")
 def scrape_url(url: str):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://www.listcorp.com/",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Connection": "keep-alive",
-    }
+    logging.info(f"Scraping URL: {url}")
     try:
-        resp = requests.get(url, allow_redirects=True, timeout=10, verify=False, headers=headers)
+        resp = requests.get(url, allow_redirects=True, timeout=30, headers=HEADERS)  # without verify=False
         resp.raise_for_status()
+        logging.info(f"Received status code: {resp.status_code}")
         return {
             "final_url": resp.url,
             "status_code": resp.status_code,
             "content_snippet": resp.text[:500]
         }
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
+        logging.error(f"Error scraping URL {url}: {e}")
         raise HTTPException(status_code=400, detail=str(e))
