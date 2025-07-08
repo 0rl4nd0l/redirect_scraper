@@ -77,4 +77,3 @@ if tool_calls:
     print("\nAssistant Response:\n", follow_up.choices[0].message.content)
 else:
     print("\nAssistant Response:\n", response.choices[0].message.content)
-# debug test line
