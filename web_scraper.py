@@ -27,6 +27,18 @@ class EnhancedWebScraper:
     def is_image_url(self, url):
         """Check if URL points to an image file"""
         image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg']
+        
+        # Remove query parameters and fragments to check the actual file extension
+        from urllib.parse import urlparse
+        parsed = urlparse(url.lower())
+        path = parsed.path
+        
+        # Check if path ends with image extension
+        for ext in image_extensions:
+            if path.endswith(ext):
+                return True
+        
+        # Also check the full URL (for legacy compatibility)
         return any(url.lower().endswith(ext) for ext in image_extensions)
     
     def could_be_image(self, url):
@@ -44,8 +56,13 @@ class EnhancedWebScraper:
             return True
             
         # Include URLs that might be images but don't have clear extensions
-        image_indicators = ['image', 'img', 'photo', 'picture', 'thumbnail', 'avatar']
+        image_indicators = ['image', 'img', 'photo', 'picture', 'thumbnail', 'avatar', 'resizer', 'cdn']
         if any(indicator in url_lower for indicator in image_indicators):
+            return True
+            
+        # Check for common image service patterns
+        image_service_patterns = ['/resizer/', '/resize/', '/thumb/', '/media/', '/assets/images/']
+        if any(pattern in url_lower for pattern in image_service_patterns):
             return True
             
         return False
