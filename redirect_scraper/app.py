@@ -425,16 +425,24 @@ async def browser_scrape_url(url: str, user_agent: Optional[str] = None, wait_ti
     start_time = time.time()
     
     try:
+        # Check if Playwright is available
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            logging.error("Playwright not available, falling back to stealth scraping")
+            return stealth_scrape_url(url, user_agent)
+            
         async with async_playwright() as p:
             # Launch browser with realistic settings
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
+            try:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
                     '--no-zygote',
                     '--disable-gpu',
                     '--disable-features=VizDisplayCompositor',
@@ -536,9 +544,19 @@ async def browser_scrape_url(url: str, user_agent: Optional[str] = None, wait_ti
                 content_preview=content_preview
             )
             
+            except Exception as browser_error:
+                logging.error(f"Browser launch failed: {browser_error}, falling back to stealth scraping")
+                return stealth_scrape_url(url, user_agent)
+            
     except Exception as e:
         logging.error(f"Error in browser scraping URL {url}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        # Fallback to stealth scraping if browser scraping fails completely
+        try:
+            logging.info(f"Attempting fallback to stealth scraping for {url}")
+            return stealth_scrape_url(url, user_agent)
+        except Exception as fallback_error:
+            logging.error(f"Fallback stealth scraping also failed: {fallback_error}")
+            raise HTTPException(status_code=400, detail=f"Both browser and stealth scraping failed: {str(e)}")
 
 # PDF scraping and text extraction endpoint
 @app.get("/scrape-pdf")
@@ -659,17 +677,42 @@ async def fetch_pdf_content(request: URLRequest) -> PDFResponse:
 
 # Smart URL endpoint that detects and handles both HTML and PDF content
 @app.get("/smart-scrape")
-def smart_scrape_url(url: str, user_agent: Optional[str] = None):
+async def smart_scrape_url(url: str, user_agent: Optional[str] = None, extract_images: bool = True, delay: int = 2):
     """Smart scraping that automatically detects content type and handles accordingly."""
     logging.info(f"Smart scraping URL: {url}")
     start_time = time.time()
 
     # Introduce random delay
-    delay = random.uniform(1, 3)
-    time.sleep(delay)
+    actual_delay = random.uniform(1, 3) if delay == 2 else delay
+    time.sleep(actual_delay)
     
-    # Domain-specific handling
+    # Domain-specific handling - detect if we should use Playwright
     parsed_url = urlparse(url)
+    use_playwright = "listcorp.com" in parsed_url.netloc.lower()  # Known JS-heavy sites
+    
+    if use_playwright:
+        logging.info(f"Detected JavaScript-heavy site, using browser scraping for {url}")
+        try:
+            # Use browser scraping for JavaScript-heavy sites
+            browser_result = await browser_scrape_url(url, user_agent)
+            
+            # Convert browser result to smart-scrape format
+            return {
+                "content_type": "html",
+                "final_url": browser_result.final_url,
+                "status_code": browser_result.status_code,
+                "redirect_count": browser_result.redirect_count,
+                "response_time": browser_result.response_time,
+                "content_preview": browser_result.content_preview,
+                "content_length": browser_result.content_length,
+                "headers": browser_result.headers,
+                "method": "playwright"
+            }
+        except Exception as browser_error:
+            logging.error(f"Browser scraping failed for {url}: {browser_error}, falling back to traditional")
+            # Fall through to traditional scraping
+    
+    # Traditional scraping approach
     if "listcorp.com" in parsed_url.netloc:
         headers = get_headers(user_agent=user_agent, referer="https://www.google.com")
     else:
@@ -739,7 +782,8 @@ def smart_scrape_url(url: str, user_agent: Optional[str] = None):
                 "response_time": response_time,
                 "content_preview": content_preview,
                 "content_length": content_length,
-                "headers": dict(response.headers)
+                "headers": dict(response.headers),
+                "method": "traditional"
             }
             
     except Exception as e:
