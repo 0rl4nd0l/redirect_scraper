@@ -231,6 +231,13 @@ def scrape_url(url: str, user_agent: Optional[str] = None) -> URLResponse:
     finally:
         session.close()
 
+# Startup logging
+import os
+print("🚀 Starting Redirect Scraper Simple...")
+print(f"📍 Current working directory: {os.getcwd()}")
+print("✅ All imports successful")
+
 if __name__ == "__main__":
     import uvicorn
+    print("🌟 Starting uvicorn server...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
